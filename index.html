@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Vocaloid Genre Map</title>
+    <title>Vocaloid Genre Map (Full Edition)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/standalone/umd/vis-network.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -10,61 +10,93 @@
     <style>
         body { margin: 0; background: #1a1a1a; color: white; font-family: sans-serif; overflow: hidden; }
         #network { width: 100vw; height: 100vh; }
-        #radarContainer { position:fixed; top:20px; right:20px; width:450px; background:rgba(20,20,20,0.95); border:2px solid #00e6e6; z-index:999; display:none; padding:15px; border-radius:15px; box-shadow: 0 0 20px rgba(0,230,230,0.3); max-height: 90vh; overflow-y: auto; }
-        .match-item { background:rgba(255,255,255,0.07); padding:8px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-left:4px solid #00e6e6; }
-        .name-link { color: white; text-decoration: none; font-weight: bold; }
-        .x-icon { color:#1DA1F2; margin-left:10px; font-size:18px; }
+        #radarContainer { position:fixed; top:20px; right:20px; width:480px; background:rgba(20,20,20,0.98); border:2px solid #00e6e6; z-index:999; display:none; padding:20px; border-radius:15px; box-shadow: 0 0 30px rgba(0,230,230,0.5); max-height: 90vh; overflow-y: auto; }
+        #radarContainer::-webkit-scrollbar { width: 8px; }
+        #radarContainer::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+        .match-item { background:rgba(255,255,255,0.07); padding:10px 14px; border-radius:10px; display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-left:4px solid #00e6e6; }
+        .name-link { color: white; text-decoration: none; font-weight: bold; flex-grow: 1; }
+        .name-link:hover { color: #00e6e6; }
+        .x-icon { color:#1DA1F2; margin-left:12px; font-size:18px; }
+        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 20px; z-index: 1000; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; border: 1px solid #00e6e6; }
     </style>
 </head>
 <body>
 
+<div id="loading">解析中... (100人規模だと少し時間がかかります)</div>
 <div id="network"></div>
+
 <div id="radarContainer">
-    <div id="userName" style="font-size:24px; font-weight:bold; text-align:center; margin-bottom:10px;"></div>
-    <div style="text-align:center; margin-bottom:15px;"><a id="xLink" href="#" target="_blank" style="color:#1DA1F2; text-decoration:none; font-size:13px; border:1px solid #1DA1F2; padding:5px 15px; border-radius:20px;">Xを開く ↗</a></div>
-    <canvas id="radarCanvas"></canvas>
-    <div style="margin-top:20px; border-top:1px solid #444; padding-top:15px;">
-        <div style="font-size:16px; color:#00e6e6; font-weight:bold; margin-bottom:10px;">好みが近い人20選</div>
+    <div id="userName" style="font-size:28px; font-weight:bold; text-align:center; margin-bottom:5px;"></div>
+    <div id="avgYearDisp" style="text-align:center; color:#00e6e6; font-size:14px; margin-bottom:12px;"></div>
+    <div style="text-align:center; margin-bottom:15px;"><a id="xLink" href="#" target="_blank" style="color:#1DA1F2; text-decoration:none; font-size:13px; border:1px solid #1DA1F2; padding:8px 20px; border-radius:20px; background: rgba(29, 161, 242, 0.1);">自分の X を開く ↗</a></div>
+    
+    <canvas id="radarCanvas" style="max-height:300px; width:100%; height:300px;"></canvas>
+    
+    <div style="margin-top:20px; background:rgba(255,255,255,0.05); padding:12px; border-radius:12px;">
+        <div style="font-size:12px; color:#aaa; margin-bottom:8px; text-align:center;">投稿年代の分布</div>
+        <div style="height:100px;"><canvas id="yearBarCanvas"></canvas></div>
+    </div>
+
+    <div style="margin-top:25px; border-top:1px solid #444; padding-top:15px;">
+        <div style="font-size:16px; color:#00e6e6; font-weight:bold; margin-bottom:12px;">好みが近い人20選 (一致度):</div>
         <div id="matchList"></div>
     </div>
-    <button onclick="document.getElementById('radarContainer').style.display='none'" style="width:100%; margin-top:15px; padding:10px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer;">閉じる</button>
+    <button onclick="document.getElementById('radarContainer').style.display='none'" style="width:100%; margin-top:20px; padding:15px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">閉じる</button>
 </div>
 
 <script>
+// --- 設定 ---
 const CSV_URL = "https://docs.google.com/spreadsheets/d/15zh_PENwsRYFgzY7qWaZ_dCL4cos6ivgI8rV9yszz4g/export?format=csv";
-
 const genreOrder = ["ロック", "ポップ", "爽やか・青春・青", "かわいい", "キャラソン・合成音声愛", "ファンタジー", "和風・民族調", "カオス・ネタ", "ダーク・病み", "バラード・静か", "オルタナ・穏やか・ポエトリー", "トロニカ", "エレクトロ", "ジャズ・おしゃれ"];
-const genreColors = ["#ff4b2b", "#3cb44b", "#007bff", "#f032e6", "#fabebe", "#ffe119", "#911eb4", "#bfef45", "#800000", "#469990", "#9a6324", "#aaffc3", "#000075", "#808080"];
+const genreColors = ["#ff4b2b", "#3cb44b", "#007bff", "#f032e6", "#fabebe", "#ffe119", "#911eb4", "#bfef45", "#800000", "#469990", "#9a6324", "#aaffc3", "#007bff", "#808080"];
 const islandPos = { "ロック": [-600, -600], "ポップ": [0, -600], "爽やか・青春・青": [600, -600], "かわいい": [-600, -200], "キャラソン・合成音声愛": [0, -200], "ファンタジー": [600, -200], "和風・民族調": [-600, 200], "カオス・ネタ": [0, 200], "ダーク・病み": [600, 200], "バラード・静か": [-600, 600], "オルタナ・穏やか・ポエトリー": [0, 600], "トロニカ": [600, 600], "エレクトロ": [-300, 950], "ジャズ・おしゃれ": [300, 950] };
 
 let myRadar = null;
+let myBar = null;
 
+// --- データ読み込みと解析 ---
 Papa.parse(CSV_URL, {
-    download: true, header: true,
+    download: true,
+    header: true,
     complete: function(results) {
         const data = results.data.filter(r => r['参加者名']);
         const profiles = {};
 
         data.forEach(row => {
             const name = row['参加者名'];
-            if (!profiles[name]) profiles[name] = { scores: {}, x_id: (row['XのID'] || "").replace('@',''), raw: [] };
-            const m = row['メインジャンル'], s = row['サブジャンル'];
+            if (!profiles[name]) {
+                profiles[name] = { 
+                    scores: {}, 
+                    x_id: (row['XのID'] || "").replace('@','').trim(), 
+                    years: [],
+                    raw: [] 
+                };
+            }
+            // ジャンル計算
+            const m = row['メインジャンル'] ? row['メインジャンル'].trim() : "";
+            const s = row['サブジャンル'] ? row['サブジャンル'].trim() : "";
             if (genreOrder.includes(m)) profiles[name].scores[m] = (profiles[name].scores[m] || 0) + 0.6;
             if (genreOrder.includes(s)) profiles[name].scores[s] = (profiles[name].scores[s] || 0) + 0.4;
+            
+            // 年代の簡易抽出 (URLや備考から数字4桁を探すロジック ※JavaScriptではyt-dlpが使えないため、スプレッドシートに年代列があると確実です)
+            // 今回は平均投稿年の表示枠を維持します。
         });
 
+        // プロファイル詳細計算
         Object.keys(profiles).forEach(name => {
             const p = profiles[name];
             const total = Object.values(p.scores).reduce((a, b) => a + b, 0);
             p.raw = genreOrder.map(g => (p.scores[g] || 0) / (total || 1));
-            const maxVal = Math.max(...Object.values(p.scores));
-            p.maximized = genreOrder.map(g => Math.round(((p.scores[g] || 0) / (maxVal || 1)) * 100));
+            const maxVal = Math.max(...Object.values(p.scores), 1);
+            p.maximized = genreOrder.map(g => Math.round(((p.scores[g] || 0) / maxVal) * 100));
             p.top = genreOrder.reduce((a, b) => (p.scores[a] || 0) > (p.scores[b] || 0) ? a : b);
+            p.avg_year = "スプレッドシート参照"; 
         });
 
+        // ネットワーク作成
         const nodes = new vis.DataSet();
         genreOrder.forEach(g => {
-            nodes.add({ id: `G_${g}`, label: g, shape: 'text', x: islandPos[g][0], y: islandPos[g][1] - 250, fixed: true, font: { size: 60, color: 'white' } });
+            nodes.add({ id: `G_${g}`, label: g, shape: 'text', x: islandPos[g][0], y: islandPos[g][1] - 250, fixed: true, font: { size: 60, color: 'white', face: 'sans-serif' } });
         });
 
         const counts = {};
@@ -75,48 +107,19 @@ Papa.parse(CSV_URL, {
             const x = islandPos[g][0] + (counts[g] % 3 - 1) * 130;
             const y = islandPos[g][1] + Math.floor(counts[g] / 3) * 90;
 
+            // 相性診断 (上位20名)
             const matches = Object.keys(profiles)
                 .filter(n => n !== name)
                 .map(n => {
                     const dot = p.raw.reduce((sum, val, i) => sum + val * profiles[n].raw[i], 0);
                     const mag1 = Math.sqrt(p.raw.reduce((s, v) => s + v*v, 0));
                     const mag2 = Math.sqrt(profiles[n].raw.reduce((s, v) => s + v*v, 0));
-                    return { name: n, sim: Math.round((dot / (mag1 * mag2)) * 100), x_id: profiles[n].x_id };
+                    return { name: n, sim: Math.round((dot / (mag1 * mag2 || 1)) * 100), x_id: profiles[n].x_id };
                 })
                 .sort((a, b) => b.sim - a.sim).slice(0, 20);
 
-            nodes.add({ id: name, label: name, shape: 'dot', size: 25, x: x, y: y, fixed: true, color: genreColors[genreOrder.indexOf(g)], font: { size: 20, color: 'white', strokeWidth: 5, strokeColor: 'black' }, custom: { ...p, matches } });
-        });
-
-        const container = document.getElementById('network');
-        const network = new vis.Network(container, { nodes }, { physics: false });
-
-        network.on("click", function(params) {
-            if (params.nodes.length > 0) {
-                const id = params.nodes[0];
-                if (id.startsWith("G_")) return;
-                const node = nodes.get(id);
-                const d = node.custom;
-                document.getElementById('radarContainer').style.display = 'block';
-                document.getElementById('userName').innerText = id;
-                document.getElementById('xLink').href = d.x_id ? `https://x.com/${d.x_id}` : "#";
-                
-                let mHtml = "";
-                d.matches.forEach(m => {
-                    mHtml += `<div class="match-item"><a href="${m.x_id ? 'https://x.com/'+m.x_id : '#'}" target="_blank" class="name-link">👤 ${m.name}</a><span><b style="color:#00e6e6;">${m.sim}%</b> <i class="fa-brands fa-x-twitter x-icon"></i></span></div>`;
-                });
-                document.getElementById('matchList').innerHTML = mHtml;
-
-                if (myRadar) myRadar.destroy();
-                myRadar = new Chart(document.getElementById('radarCanvas'), {
-                    type: 'radar',
-                    data: { labels: genreOrder, datasets: [{ data: d.maximized, backgroundColor: 'rgba(0, 230, 230, 0.4)', borderColor: '#00e6e6' }] },
-                    options: { scales: { r: { min: 0, max: 100, ticks: { display: false }, pointLabels: { color: 'white' } } }, plugins: { legend: { display: false } } }
-                });
-            }
-        });
-    }
-});
-</script>
-</body>
-</html>
+            nodes.add({ 
+                id: name, label: name, shape: 'dot', size: 25, x: x, y: y, fixed: true, 
+                color: genreColors[genreOrder.indexOf(g)], 
+                font: { size: 20, color: 'white', strokeWidth: 5, strokeColor: 'black' },
+                custom: { ...p,
